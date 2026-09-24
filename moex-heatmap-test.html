@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>MOEX — Тепловая карта (тест)</title>
+<style>
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #0f1117;
+    color: #e6e6e6;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: #888; font-size: 13px; margin-bottom: 16px; }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .controls label { font-size: 13px; color: #aaa; }
+  select, button {
+    background: #1a1d29;
+    color: #e6e6e6;
+    border: 1px solid #2a2d3a;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  select:hover, button:hover { border-color: #444a5e; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 12px;
+  }
+  .card {
+    border-radius: 10px;
+    padding: 14px;
+    background: #1a1d29;
+    border: 1px solid #2a2d3a;
+  }
+  .ticker { font-weight: 700; font-size: 15px; }
+  .name { font-size: 11px; color: #999; margin-bottom: 8px; }
+  .price { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  .diff { font-size: 13px; font-weight: 600; padding: 2px 6px; border-radius: 6px; display: inline-block; }
+  .meta { font-size: 10px; color: #777; margin-top: 6px; }
+  .error-box {
+    background: #2a1a1a;
+    border: 1px solid #5a2a2a;
+    border-radius: 8px;
+    padding: 16px;
+    color: #ff9b9b;
+    font-size: 13px;
+    white-space: pre-wrap;
+    margin-bottom: 16px;
+  }
+  #updated { color: #666; font-size: 12px; margin-top: 16px; }
+</style>
+</head>
+<body>
+  <h1>🔥 Тепловая карта MOEX (тестовая HTML-версия)</h1>
+  <div class="sub">Прямой запрос из браузера к iss.moex.com — без своего сервера</div>
+
+  <div class="controls">
+    <label for="sortSelect">Сортировать по:</label>
+    <select id="sortSelect">
+      <option value="ticker">Тикеру (А-Я)</option>
+      <option value="last">Цене</option>
+      <option value="diffPct" selected>Изменению % (сегодня vs вчера)</option>
+      <option value="valToday">Обороту сегодня</option>
+      <option value="valYesterday">Обороту вчера</option>
+      <option value="capitalization">Капитализации</option>
+    </select>
+    <button id="sortDirBtn" data-dir="desc">По убыванию ↓</button>
+  </div>
+
+  <div id="errorBox"></div>
+  <div class="grid" id="grid">Загрузка...</div>
+  <div id="updated"></div>
+
+<script>
+const TICKERS = ["SBER", "LKOH", "GAZP", "ROSN", "NVTK", "SIBN", "GMKN", "YDEX", "TATN", "T", "PLZL", "VTBR", "SNGS", "MTSS", "MOEX", "OZON", "PIKK", "FIVE", "AFLT", "NLMK", "CHMF", "MGNT", "PHOR", "AKRN", "IRAO",
+"ALRS", "MAGN", "LENT", "CBOM", "BSPB", "TATNP", "SBERP", "SNGSP", "RTKM", "RTKMP", "MTLR", "ENPG", "RUAL", "TRMK", "POLY", "RASP", "SELG", "AFKS", "BANE", "TRNFP", "NKNC", "LSRG", "SMLT", "GLRX", "HHRU", "POSI", "VKCO", "FIXP", "DELI", "LEAS", "FLOT", "NMTP", "AGRO", "GCHE", "MDMG", "GEMC", "SOLL", "KMAZ", "GTLK", "FEES", "HYDR", "MSNG", "OGKB", "UPRO", "TGKA", "MRKC", "MRKV", "TATE", "DVEC", "SGZH", "VSMO", "ASTR", "DIAS", "VSEH", "SOFL", "CIAN", "WUSH", "HNFG", "NTRN", "BAZA", "ZAYM", "APTK", "LIFE", "GECO", "ABIO", "DOMRF", "SVCB", "MBNK", "SPBE", "DATA", "IVAT", "KLVZ", "BELU", "OKEY", "ETLN", "MVID",
+"MGTS", "BISVP", "CBOMP", "PRMB", "ARSA", "BTBR", "AVAN", "APRI", "BLNG", "VSYD", "GAZS", "GAZT", "GAZC", "GAZA", "GTRK", "DZRD", "VLHZ", "VJGZ", "RTGZ", "ASSB", "VGSB", "TBSB", "YARS", "RTSB", "EELT", "DIOD", "ELMT", "EUTR", "ABRD", "AQUA", "RNFT", "AMEZ", "UGLD", "BRZL", "MRKS", "MRKY", "MRKK", "MRKZ", "MRKU", "LSNG", "ELFV", "VEON"];
+const BOARD = "TQBR";
+
+let lastResults = [];
+
+function formatBig(num) {
+  if (num === null || num === undefined) return '—';
+  if (num >= 1e9) return (num / 1e9).toFixed(1) + ' млрд';
+  if (num >= 1e6) return (num / 1e6).toFixed(1) + ' млн';
+  if (num >= 1e3) return (num / 1e3).toFixed(0) + ' тыс';
+  return num.toString();
+}
+
+// Предыдущий торговый день (простая эвристика: без учёта праздников биржи)
+function previousTradingDate() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  while (d.getDay() === 0 || d.getDay() === 6) { // вс=0, сб=6
+    d.setDate(d.getDate() - 1);
+  }
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+async function fetchQuote(ticker) {
+  const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/${BOARD}/securities/${ticker}.json?iss.meta=off&iss.only=marketdata,securities&marketdata.columns=SECID,LAST,VALTODAY,VOLTODAY,ISSUECAPITALIZATION&securities.columns=SECID,SHORTNAME,PREVPRICE`;
+  const resp = await fetch(url);
+  const data = await resp.json();
+  const mdRow = data.marketdata.data[0];
+  const secRow = data.securities.data[0];
+  const last = mdRow ? mdRow[1] : null;
+  const valToday = mdRow ? mdRow[2] : null;       // оборот в рублях за сегодня
+  const volToday = mdRow ? mdRow[3] : null;       // объём в штуках за сегодня
+  const capitalization = mdRow ? mdRow[4] : null; // капитализация, руб
+  const prevPrice = secRow ? secRow[2] : null;
+  const name = secRow ? secRow[1] : null;
+  const diffPct = (last && prevPrice) ? Math.round((last - prevPrice) / prevPrice * 10000) / 100 : null;
+  return { ticker, name, last, prevPrice, diffPct, valToday, volToday, capitalization };
+}
+
+// Оборот за вчера — берём из истории торгов (эндпоинт /history)
+async function fetchYesterdayTurnover(ticker, dateStr) {
+  const url = `https://iss.moex.com/iss/history/engines/stock/markets/shares/boards/${BOARD}/securities/${ticker}.json?iss.meta=off&from=${dateStr}&till=${dateStr}&history.columns=TRADEDATE,VALUE`;
+  const resp = await fetch(url);
+  const data = await resp.json();
+  const rows = data.history && data.history.data ? data.history.data : [];
+  if (!rows.length) return null;
+  const cols = data.history.columns;
+  const valueIdx = cols.indexOf('VALUE');
+  return rows[0][valueIdx] ?? null;
+}
+
+async function fetchAll() {
+  const prevDate = previousTradingDate();
+
+  const results = await Promise.all(TICKERS.map(async t => {
+    try {
+      const quote = await fetchQuote(t);
+      let valYesterday = null;
+      try {
+        valYesterday = await fetchYesterdayTurnover(t, prevDate);
+      } catch (e) {
+        // если история не пришла — не считаем это критичной ошибкой всей карточки
+        valYesterday = null;
+      }
+      return { ...quote, valYesterday };
+    } catch (e) {
+      return { ticker: t, error: e.message };
+    }
+  }));
+
+  return { results, prevDate };
+}
+
+function sortResults(results, key, dir) {
+  const sorted = [...results].filter(r => !r.error);
+  const errored = results.filter(r => r.error);
+
+  sorted.sort((a, b) => {
+    let av = a[key], bv = b[key];
+    if (key === 'ticker') {
+      av = av || ''; bv = bv || '';
+      return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    }
+    av = (av === null || av === undefined) ? -Infinity : av;
+    bv = (bv === null || bv === undefined) ? -Infinity : bv;
+    return dir === 'asc' ? av - bv : bv - av;
+  });
+
+  return [...sorted, ...errored];
+}
+
+function renderGrid(results, prevDate) {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  results.forEach(row => {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    if (row.error) {
+      card.innerHTML = `<div class="ticker">${row.ticker}</div><div style="color:#ff6b6b;font-size:12px">${row.error}</div>`;
+      grid.appendChild(card);
+      return;
+    }
+
+    const diff = row.diffPct;
+    let diffBg = '#2a2d3a', sign = '';
+    if (diff !== null) {
+      if (diff > 0) { diffBg = `rgba(76, 217, 100, ${Math.min(0.3 + Math.abs(diff) / 5, 1)})`; sign = '+'; }
+      else if (diff < 0) { diffBg = `rgba(255, 107, 107, ${Math.min(0.3 + Math.abs(diff) / 5, 1)})`; }
+    }
+
+    card.innerHTML = `
+      <div class="ticker">${row.ticker}</div>
+      <div class="name">${row.name || ''}</div>
+      <div class="price">${row.last ?? '—'}</div>
+      <span class="diff" style="background:${diffBg}">
+        ${diff !== null ? sign + diff + '%' : 'н/д'}
+      </span>
+      <div class="meta">пред. закрытие: ${row.prevPrice ?? '—'}</div>
+      <div class="meta">оборот сегодня: ${formatBig(row.valToday)} ₽</div>
+      <div class="meta">оборот вчера (${prevDate}): ${formatBig(row.valYesterday)} ₽</div>
+      <div class="meta">капитализация: ${formatBig(row.capitalization)} ₽</div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function renderCurrentSort() {
+  const key = document.getElementById('sortSelect').value;
+  const dir = document.getElementById('sortDirBtn').dataset.dir;
+  renderGrid(sortResults(lastResults, key, dir), lastResults._prevDate);
+}
+
+async function loadData() {
+  const errorBox = document.getElementById('errorBox');
+  const grid = document.getElementById('grid');
+  errorBox.innerHTML = '';
+
+  try {
+    const { results, prevDate } = await fetchAll();
+    results._prevDate = prevDate;
+    lastResults = results;
+    lastResults._prevDate = prevDate;
+
+    renderCurrentSort();
+
+    document.getElementById('updated').textContent =
+      'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
+
+  } catch (e) {
+    errorBox.innerHTML =
+      '❌ Не удалось получить данные напрямую из браузера.\n\n' +
+      'Скорее всего сработала блокировка CORS — MOEX не разрешает ' +
+      'прямые запросы с произвольных веб-страниц.\n\n' +
+      'Текст ошибки: ' + e.message + '\n\n' +
+      'Это значит, что для полноценной работы (и особенно чтобы другие ' +
+      'твои сервисы могли обращаться к этим данным) нужен именно ' +
+      'сервер-посредник — просто HTML-страница здесь не справится.';
+    grid.innerHTML = '';
+  }
+}
+
+document.getElementById('sortSelect').addEventListener('change', renderCurrentSort);
+document.getElementById('sortDirBtn').addEventListener('click', (e) => {
+  const btn = e.target;
+  const newDir = btn.dataset.dir === 'desc' ? 'asc' : 'desc';
+  btn.dataset.dir = newDir;
+  btn.textContent = newDir === 'desc' ? 'По убыванию ↓' : 'По возрастанию ↑';
+  renderCurrentSort();
+});
+
+loadData();
+setInterval(loadData, 30000); // увеличен интервал до 30 сек — теперь вдвое больше запросов на тикер (котировка + история)
+</script>
+</body>
+</html>
